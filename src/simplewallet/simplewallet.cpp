@@ -100,6 +100,7 @@ namespace
 {
   const auto arg_wallet_file = wallet_args::arg_wallet_file();
   const command_line::arg_descriptor<std::string> arg_generate_new_wallet = {"generate-new-wallet", sw::tr("Generate new wallet and save it to <arg>"), ""};
+  const command_line::arg_descriptor<std::string> arg_generate_from_brainwallet = {"brainwallet", sw::tr("Generate wallet using brainwallet passphrase as seed and saves it to <arg>."), ""};
   const command_line::arg_descriptor<std::string> arg_generate_from_view_key = {"generate-from-view-key", sw::tr("Generate incoming-only wallet from view key"), ""};
   const command_line::arg_descriptor<std::string> arg_generate_from_keys = {"generate-from-keys", sw::tr("Generate wallet from private keys"), ""};
   const auto arg_generate_from_json = wallet_args::arg_generate_from_json();
@@ -950,12 +951,12 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
   if (!handle_command_line(vm))
     return false;
 
-  if((!m_generate_new.empty()) + (!m_wallet_file.empty()) + (!m_generate_from_view_key.empty()) + (!m_generate_from_keys.empty()) + (!m_generate_from_json.empty()) > 1)
+  if((!m_generate_new.empty()) + (!m_wallet_file.empty()) + (!m_generate_from_view_key.empty()) + (!m_generate_from_brainwallet.empty()) + (!m_generate_from_keys.empty()) + (!m_generate_from_json.empty()) > 1)
   {
-    fail_msg_writer() << tr("can't specify more than one of --generate-new-wallet=\"wallet_name\", --wallet-file=\"wallet_name\", --generate-from-view-key=\"wallet_name\", --generate-from-json=\"jsonfilename\" and --generate-from-keys=\"wallet_name\"");
+    fail_msg_writer() << tr("can't specify more than one of --generate-new-wallet=\"wallet_name\", --brainwallet=\"brainwallet_passphrase\", --wallet-file=\"wallet_name\", --generate-from-view-key=\"wallet_name\", --generate-from-json=\"jsonfilename\" and --generate-from-keys=\"wallet_name\"");
     return false;
   }
-  else if (m_generate_new.empty() && m_wallet_file.empty() && m_generate_from_view_key.empty() && m_generate_from_keys.empty() && m_generate_from_json.empty())
+  else if (m_generate_new.empty() && m_wallet_file.empty() && m_generate_from_view_key.empty() && m_generate_from_brainwallet.empty() && m_generate_from_keys.empty() && m_generate_from_json.empty())
   {
     if(!ask_wallet_create_if_needed()) return false;
   }
@@ -1056,6 +1057,17 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
       }
 
       bool r = new_wallet(vm, address, boost::none, viewkey);
+      CHECK_AND_ASSERT_MES(r, false, tr("account creation failed"));
+    }
+    else if (!m_generate_from_brainwallet.empty())
+    {
+      // parse spend secret key
+      std::string brainwallet_passphrase = command_line::input_line("Enter your brainwallet phrase: ");
+      crypto::hash spend_seed;
+      cn_fast_hash(brainwallet_passphrase.c_str(), brainwallet_passphrase.size(), spend_seed.data);
+      crypto::secret_key spendkey = *reinterpret_cast<const crypto::secret_key*>(spend_seed.data);
+      m_wallet_file = m_generate_from_brainwallet;
+      bool r = new_wallet(vm, spendkey, true, false, "");
       CHECK_AND_ASSERT_MES(r, false, tr("account creation failed"));
     }
     else if (!m_generate_from_keys.empty())
@@ -1171,6 +1183,7 @@ bool simple_wallet::handle_command_line(const boost::program_options::variables_
   m_wallet_file                   = command_line::get_arg(vm, arg_wallet_file);
   m_generate_new                  = command_line::get_arg(vm, arg_generate_new_wallet);
   m_generate_from_view_key        = command_line::get_arg(vm, arg_generate_from_view_key);
+  m_generate_from_brainwallet     = command_line::get_arg(vm, arg_generate_from_brainwallet);
   m_generate_from_keys            = command_line::get_arg(vm, arg_generate_from_keys);
   m_generate_from_json            = command_line::get_arg(vm, arg_generate_from_json);
   m_electrum_seed                 = command_line::get_arg(vm, arg_electrum_seed);
@@ -1180,6 +1193,7 @@ bool simple_wallet::handle_command_line(const boost::program_options::variables_
   m_allow_mismatched_daemon_version = command_line::get_arg(vm, arg_allow_mismatched_daemon_version);
   m_restore_height                = command_line::get_arg(vm, arg_restore_height);
   m_restoring                     = !m_generate_from_view_key.empty() ||
+                                    !m_generate_from_brainwallet.empty() ||
                                     !m_generate_from_keys.empty() ||
                                     !m_generate_from_json.empty() ||
                                     m_restore_deterministic_wallet;
@@ -3914,6 +3928,7 @@ int main(int argc, char* argv[])
   command_line::add_arg(desc_params, arg_wallet_file);
   command_line::add_arg(desc_params, arg_generate_new_wallet);
   command_line::add_arg(desc_params, arg_generate_from_view_key);
+  command_line::add_arg(desc_params, arg_generate_from_brainwallet);
   command_line::add_arg(desc_params, arg_generate_from_keys);
   command_line::add_arg(desc_params, arg_generate_from_json);
   command_line::add_arg(desc_params, arg_command);
